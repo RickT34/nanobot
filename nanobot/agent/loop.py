@@ -419,6 +419,14 @@ class AgentLoop:
                 f"I reached the maximum number of tool call iterations ({self.max_iterations}) "
                 "without completing the task. You can try breaking the task into smaller steps."
             )
+            # When streaming is active, the final content must be pushed through the
+            # stream so that channels (e.g. Feishu) update the streaming card.  Without
+            # this the stream card is left empty and the caller's _send_once silently
+            # drops the outbound message because _streamed=True.
+            if on_stream and on_stream_end:
+                await on_stream(final_content)
+                await on_stream_end(resuming=False)
+                _stream_buf = ""
 
         return final_content, tools_used, messages
 
