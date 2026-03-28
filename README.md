@@ -864,6 +864,7 @@ Config file: `~/.nanobot/config.json`
 | `anthropic` | LLM (Claude direct) | [console.anthropic.com](https://console.anthropic.com) |
 | `azure_openai` | LLM (Azure OpenAI) | [portal.azure.com](https://portal.azure.com) |
 | `openai` | LLM (GPT direct) | [platform.openai.com](https://platform.openai.com) |
+| `codex_api` | LLM (Codex API key, custom base URL) | [platform.openai.com](https://platform.openai.com) |
 | `deepseek` | LLM (DeepSeek direct) | [platform.deepseek.com](https://platform.deepseek.com) |
 | `groq` | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com) |
 | `minimax` | LLM (MiniMax direct) | [platform.minimaxi.com](https://platform.minimaxi.com) |
@@ -915,6 +916,33 @@ nanobot agent -c ~/.nanobot-telegram/config.json -w /tmp/nanobot-telegram-test -
 ```
 
 > Docker users: use `docker run -it` for interactive OAuth login.
+
+</details>
+
+<details>
+<summary><b>Codex API (API key)</b></summary>
+
+Use this provider when you want Codex-style Responses API calls with a normal API key and an optional custom base URL.
+
+Example `~/.nanobot/config.json`:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "codex-api/gpt-5-codex"
+    }
+  },
+  "providers": {
+    "codexApi": {
+      "apiKey": "sk-...",
+      "apiBase": "https://api.openai.com/v1"
+    }
+  }
+}
+```
+
+`apiBase` can point either to the API root (for example `https://api.openai.com/v1`) or directly to a `/responses` endpoint.
 
 </details>
 

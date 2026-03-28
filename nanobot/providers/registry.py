@@ -212,6 +212,15 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         default_api_base="https://chatgpt.com/backend-api",
         is_oauth=True,
     ),
+    # Codex API: Responses API with API key auth and configurable base URL
+    ProviderSpec(
+        name="codex_api",
+        keywords=("codex-api", "codex_api"),
+        env_key="",
+        display_name="Codex API",
+        backend="openai_codex",
+        default_api_base="https://api.openai.com/v1",
+    ),
     # GitHub Copilot: OAuth-based
     ProviderSpec(
         name="github_copilot",

@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from nanobot.bus.events import OutboundMessage
 from nanobot.cli.commands import _make_provider, app
 from nanobot.config.schema import Config
-from nanobot.providers.openai_codex_provider import _strip_model_prefix
+from nanobot.providers.openai_codex_provider import _resolve_responses_url, _strip_model_prefix
 from nanobot.providers.registry import find_by_name
 
 runner = CliRunner()
@@ -213,6 +213,17 @@ def test_config_matches_openai_codex_with_hyphen_prefix():
     assert config.get_provider_name() == "openai_codex"
 
 
+def test_config_matches_codex_api_with_hyphen_prefix():
+    config = Config.model_validate(
+        {
+            "agents": {"defaults": {"model": "codex-api/gpt-5-codex"}},
+            "providers": {"codexApi": {"apiKey": "test-key"}},
+        }
+    )
+
+    assert config.get_provider_name() == "codex_api"
+
+
 def test_config_dump_excludes_oauth_provider_blocks():
     config = Config()
 
@@ -320,6 +331,31 @@ def test_openai_compat_provider_passes_model_through():
 def test_openai_codex_strip_prefix_supports_hyphen_and_underscore():
     assert _strip_model_prefix("openai-codex/gpt-5.1-codex") == "gpt-5.1-codex"
     assert _strip_model_prefix("openai_codex/gpt-5.1-codex") == "gpt-5.1-codex"
+    assert _strip_model_prefix("codex-api/gpt-5-codex") == "gpt-5-codex"
+    assert _strip_model_prefix("codex_api/gpt-5-codex") == "gpt-5-codex"
+
+
+def test_provider_config_accepts_base_url_alias():
+    config = Config.model_validate(
+        {
+            "providers": {
+                "codexApi": {
+                    "apiKey": "test-key",
+                    "baseUrl": "https://example.com/custom/v1",
+                }
+            }
+        }
+    )
+
+    assert config.providers.codex_api.api_base == "https://example.com/custom/v1"
+
+
+def test_codex_api_responses_url_normalizes_base_path():
+    assert _resolve_responses_url("https://example.com/v1") == "https://example.com/v1/responses"
+    assert (
+        _resolve_responses_url("https://example.com/v1/responses")
+        == "https://example.com/v1/responses"
+    )
 
 
 def test_make_provider_passes_extra_headers_to_custom_provider():
@@ -347,6 +383,28 @@ def test_make_provider_passes_extra_headers_to_custom_provider():
     assert kwargs["base_url"] == "https://example.com/v1"
     assert kwargs["default_headers"]["APP-Code"] == "demo-app"
     assert kwargs["default_headers"]["x-session-affinity"] == "sticky-session"
+
+
+def test_make_provider_uses_codex_api_key_and_base():
+    config = Config.model_validate(
+        {
+            "agents": {"defaults": {"provider": "codexApi", "model": "gpt-5-codex"}},
+            "providers": {
+                "codexApi": {
+                    "apiKey": "test-key",
+                    "baseUrl": "https://example.com/custom/v1",
+                    "extraHeaders": {"x-trace-id": "demo"},
+                }
+            },
+        }
+    )
+
+    provider = _make_provider(config)
+
+    assert provider.__class__.__name__ == "CodexAPIProvider"
+    assert provider.api_key == "test-key"
+    assert provider.api_base == "https://example.com/custom/v1"
+    assert provider.extra_headers == {"x-trace-id": "demo"}
 
 
 @pytest.fixture

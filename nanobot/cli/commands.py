@@ -396,6 +396,11 @@ def _make_provider(config: Config):
             console.print("Set them in ~/.nanobot/config.json under providers.azure_openai section")
             console.print("Use the model field to specify the deployment name.")
             raise typer.Exit(1)
+    elif backend == "openai_codex" and not (spec and spec.is_oauth):
+        if not p or not p.api_key:
+            console.print("[red]Error: Codex API requires api_key.[/red]")
+            console.print("Set one in ~/.nanobot/config.json under providers.codexApi section")
+            raise typer.Exit(1)
     elif backend == "openai_compat" and not model.startswith("bedrock/"):
         needs_key = not (p and p.api_key)
         exempt = spec and (spec.is_oauth or spec.is_local or spec.is_direct)
@@ -406,8 +411,16 @@ def _make_provider(config: Config):
 
     # --- instantiation by backend ---
     if backend == "openai_codex":
-        from nanobot.providers.openai_codex_provider import OpenAICodexProvider
-        provider = OpenAICodexProvider(default_model=model)
+        from nanobot.providers.openai_codex_provider import CodexAPIProvider, OpenAICodexProvider
+        if spec and spec.is_oauth:
+            provider = OpenAICodexProvider(default_model=model)
+        else:
+            provider = CodexAPIProvider(
+                api_key=p.api_key if p else None,
+                api_base=(p.api_base if p and p.api_base else (spec.default_api_base if spec else None)),
+                default_model=model,
+                extra_headers=p.extra_headers if p else None,
+            )
     elif backend == "azure_openai":
         from nanobot.providers.azure_openai_provider import AzureOpenAIProvider
         provider = AzureOpenAIProvider(

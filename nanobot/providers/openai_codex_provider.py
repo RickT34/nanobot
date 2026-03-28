@@ -10,12 +10,13 @@ from typing import Any, AsyncGenerator
 
 import httpx
 from loguru import logger
-from oauth_cli_kit import get_token as get_codex_token
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 DEFAULT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses"
+DEFAULT_CODEX_API_BASE = "https://api.openai.com/v1"
 DEFAULT_ORIGINATOR = "nanobot"
+_MODEL_PREFIXES = ("openai-codex/", "openai_codex/", "codex-api/", "codex_api/")
 
 
 class OpenAICodexProvider(LLMProvider):
@@ -35,28 +36,12 @@ class OpenAICodexProvider(LLMProvider):
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         """Shared request logic for both chat() and chat_stream()."""
+        from oauth_cli_kit import get_token as get_codex_token
+
         model = model or self.default_model
-        system_prompt, input_items = _convert_messages(messages)
-
         token = await asyncio.to_thread(get_codex_token)
-        headers = _build_headers(token.account_id, token.access)
-
-        body: dict[str, Any] = {
-            "model": _strip_model_prefix(model),
-            "store": False,
-            "stream": True,
-            "instructions": system_prompt,
-            "input": input_items,
-            "text": {"verbosity": "medium"},
-            "include": ["reasoning.encrypted_content"],
-            "prompt_cache_key": _prompt_cache_key(messages),
-            "tool_choice": tool_choice or "auto",
-            "parallel_tool_calls": True,
-        }
-        if reasoning_effort:
-            body["reasoning"] = {"effort": reasoning_effort}
-        if tools:
-            body["tools"] = _convert_tools(tools)
+        headers = _build_oauth_headers(token.account_id, token.access)
+        body = _build_codex_body(messages, tools, model, reasoning_effort, tool_choice)
 
         try:
             try:
@@ -97,13 +82,84 @@ class OpenAICodexProvider(LLMProvider):
         return self.default_model
 
 
+class CodexAPIProvider(LLMProvider):
+    """Use API-key auth to call a Codex-compatible Responses API."""
+
+    def __init__(
+        self,
+        api_key: str | None,
+        api_base: str | None = None,
+        default_model: str = "codex-api/gpt-5-codex",
+        extra_headers: dict[str, str] | None = None,
+    ):
+        super().__init__(api_key=api_key, api_base=api_base)
+        self.default_model = default_model
+        self.extra_headers = extra_headers or {}
+
+    async def _call_codex(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str | None,
+        reasoning_effort: str | None,
+        tool_choice: str | dict[str, Any] | None,
+        on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> LLMResponse:
+        if not self.api_key:
+            return LLMResponse(content="Error calling Codex: missing API key", finish_reason="error")
+
+        model = model or self.default_model
+        headers = _build_api_key_headers(self.api_key, self.extra_headers)
+        body = _build_codex_body(messages, tools, model, reasoning_effort, tool_choice)
+        url = _resolve_responses_url(self.api_base)
+
+        try:
+            try:
+                content, tool_calls, finish_reason = await _request_codex(
+                    url, headers, body, verify=True,
+                    on_content_delta=on_content_delta,
+                )
+            except Exception as e:
+                if "CERTIFICATE_VERIFY_FAILED" not in str(e):
+                    raise
+                logger.warning("SSL verification failed for Codex API; retrying with verify=False")
+                content, tool_calls, finish_reason = await _request_codex(
+                    url, headers, body, verify=False,
+                    on_content_delta=on_content_delta,
+                )
+            return LLMResponse(content=content, tool_calls=tool_calls, finish_reason=finish_reason)
+        except Exception as e:
+            return LLMResponse(content=f"Error calling Codex: {e}", finish_reason="error")
+
+    async def chat(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None,
+        model: str | None = None, max_tokens: int = 4096, temperature: float = 0.7,
+        reasoning_effort: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+    ) -> LLMResponse:
+        return await self._call_codex(messages, tools, model, reasoning_effort, tool_choice)
+
+    async def chat_stream(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None,
+        model: str | None = None, max_tokens: int = 4096, temperature: float = 0.7,
+        reasoning_effort: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> LLMResponse:
+        return await self._call_codex(messages, tools, model, reasoning_effort, tool_choice, on_content_delta)
+
+    def get_default_model(self) -> str:
+        return self.default_model
+
+
 def _strip_model_prefix(model: str) -> str:
-    if model.startswith("openai-codex/") or model.startswith("openai_codex/"):
-        return model.split("/", 1)[1]
+    for prefix in _MODEL_PREFIXES:
+        if model.startswith(prefix):
+            return model.split("/", 1)[1]
     return model
 
 
-def _build_headers(account_id: str, token: str) -> dict[str, str]:
+def _build_oauth_headers(account_id: str, token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
         "chatgpt-account-id": account_id,
@@ -113,6 +169,52 @@ def _build_headers(account_id: str, token: str) -> dict[str, str]:
         "accept": "text/event-stream",
         "content-type": "application/json",
     }
+
+
+def _build_api_key_headers(api_key: str, extra_headers: dict[str, str] | None = None) -> dict[str, str]:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": "nanobot (python)",
+        "accept": "text/event-stream",
+        "content-type": "application/json",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    return headers
+
+
+def _resolve_responses_url(api_base: str | None) -> str:
+    base = (api_base or DEFAULT_CODEX_API_BASE).rstrip("/")
+    if base.endswith("/responses"):
+        return base
+    return f"{base}/responses"
+
+
+def _build_codex_body(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    model: str,
+    reasoning_effort: str | None,
+    tool_choice: str | dict[str, Any] | None,
+) -> dict[str, Any]:
+    system_prompt, input_items = _convert_messages(messages)
+    body: dict[str, Any] = {
+        "model": _strip_model_prefix(model),
+        "store": False,
+        "stream": True,
+        "instructions": system_prompt,
+        "input": input_items,
+        "text": {"verbosity": "medium"},
+        "include": ["reasoning.encrypted_content"],
+        "prompt_cache_key": _prompt_cache_key(messages),
+        "tool_choice": tool_choice or "auto",
+        "parallel_tool_calls": True,
+    }
+    if reasoning_effort:
+        body["reasoning"] = {"effort": reasoning_effort}
+    if tools:
+        body["tools"] = _convert_tools(tools)
+    return body
 
 
 async def _request_codex(
