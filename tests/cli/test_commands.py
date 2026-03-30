@@ -1,5 +1,6 @@
 import json
 import re
+import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,11 +18,6 @@ runner = CliRunner()
 
 class _StopGatewayError(RuntimeError):
     pass
-
-
-import shutil
-
-import pytest
 
 
 @pytest.fixture
@@ -69,6 +65,7 @@ def test_onboard_fresh_install(mock_paths):
     assert "nanobot is ready" in result.stdout
     assert config_file.exists()
     assert (workspace_dir / "AGENTS.md").exists()
+    assert (workspace_dir / "WORKSPACE.md").exists()
     assert (workspace_dir / "memory" / "MEMORY.md").exists()
     expected_workspace = Config().workspace_path
     assert mock_ws.call_args.args == (expected_workspace,)
@@ -112,7 +109,9 @@ def test_onboard_existing_workspace_safe_create(mock_paths):
     assert result.exit_code == 0
     assert "Created workspace" not in result.stdout
     assert "Created AGENTS.md" in result.stdout
+    assert "Created WORKSPACE.md" in result.stdout
     assert (workspace_dir / "AGENTS.md").exists()
+    assert (workspace_dir / "WORKSPACE.md").exists()
 
 
 def _strip_ansi(text):

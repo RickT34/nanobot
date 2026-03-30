@@ -206,6 +206,7 @@ nanobot onboard
 ```
 
 Use `nanobot onboard --wizard` if you want the interactive setup wizard.
+The workspace bootstrap includes files like `AGENTS.md`, `TOOLS.md`, `USER.md`, and `WORKSPACE.md` so nanobot can learn your instructions, preferences, and project layout.
 
 **2. Configure** (`~/.nanobot/config.json`)
 

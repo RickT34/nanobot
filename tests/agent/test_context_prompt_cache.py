@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import datetime as datetime_module
 from datetime import datetime as real_datetime
 from importlib.resources import files as pkg_files
 from pathlib import Path
-import datetime as datetime_module
 
 from nanobot.agent.context import ContextBuilder
 
@@ -55,6 +55,16 @@ def test_system_prompt_includes_learned_improvements(tmp_path) -> None:
 
     assert "# Learned Improvements" in prompt
     assert "Prefer reading files before editing." in prompt
+
+
+def test_system_prompt_includes_workspace_guide(tmp_path) -> None:
+    workspace = _make_workspace(tmp_path)
+    (workspace / "WORKSPACE.md").write_text("# Workspace Guide\n\n- Put reusable tools in 05_reference/.\n", encoding="utf-8")
+
+    prompt = ContextBuilder(workspace).build_system_prompt()
+
+    assert "## WORKSPACE.md" in prompt
+    assert "Put reusable tools in 05_reference/." in prompt
 
 
 def test_runtime_context_is_separate_untrusted_user_message(tmp_path) -> None:

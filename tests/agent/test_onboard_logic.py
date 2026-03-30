@@ -4,12 +4,10 @@ These tests focus on the business logic behind the onboard wizard,
 without testing the interactive UI components.
 """
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-import pytest
 from pydantic import BaseModel, Field
 
 from nanobot.cli import onboard as onboard_wizard
@@ -355,6 +353,14 @@ class TestSyncWorkspaceTemplates:
 
         assert (workspace / "TEACHER.md").exists()
         assert (workspace / "LEARN.md").exists()
+
+    def test_creates_workspace_guide_file(self, tmp_path):
+        """Should create a workspace guide template for reusable organization hints."""
+        workspace = tmp_path / "workspace"
+
+        sync_workspace_templates(workspace, silent=True)
+
+        assert (workspace / "WORKSPACE.md").exists()
 
 
 class TestProviderChannelInfo:
