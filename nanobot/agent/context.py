@@ -37,6 +37,10 @@ class ContextBuilder:
         if memory:
             parts.append(f"# Memory\n\n{memory}")
 
+        learnings = self._load_learnings()
+        if learnings:
+            parts.append(f"# Learned Improvements\n\n{learnings}")
+
         always_skills = self.skills.get_always_skills()
         if always_skills:
             always_content = self.skills.load_skills_for_context(always_skills)
@@ -121,6 +125,13 @@ IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST
                 parts.append(f"## {filename}\n\n{content}")
 
         return "\n\n".join(parts) if parts else ""
+
+    def _load_learnings(self) -> str:
+        """Load LEARN.md if present so future runs can use prior lessons."""
+        file_path = self.workspace / "LEARN.md"
+        if file_path.exists():
+            return file_path.read_text(encoding="utf-8")
+        return ""
 
     def build_messages(
         self,

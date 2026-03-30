@@ -347,6 +347,15 @@ class TestSyncWorkspaceTemplates:
         for path in added:
             assert not Path(path).is_absolute()
 
+    def test_creates_teacher_learning_files(self, tmp_path):
+        """Should create the teacher prompt and learning note files."""
+        workspace = tmp_path / "workspace"
+
+        sync_workspace_templates(workspace, silent=True)
+
+        assert (workspace / "TEACHER.md").exists()
+        assert (workspace / "LEARN.md").exists()
+
 
 class TestProviderChannelInfo:
     """Tests for provider and channel info retrieval."""

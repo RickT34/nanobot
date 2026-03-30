@@ -18,6 +18,7 @@ from nanobot.agent.hook import AgentHook, AgentHookContext
 from nanobot.agent.memory import MemoryConsolidator
 from nanobot.agent.runner import AgentRunSpec, AgentRunner
 from nanobot.agent.subagent import SubagentManager
+from nanobot.agent.teacher import TeacherAgent
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
@@ -123,6 +124,12 @@ class AgentLoop:
             build_messages=self.context.build_messages,
             get_tool_definitions=self.tools.get_definitions,
             max_completion_tokens=provider.generation.max_tokens,
+        )
+        self.teacher = TeacherAgent(
+            workspace=workspace,
+            provider=provider,
+            model=self.model,
+            timezone=timezone,
         )
         self._register_default_tools()
         self.commands = CommandRouter()
@@ -381,6 +388,24 @@ class AgentLoop:
         self._background_tasks.append(task)
         task.add_done_callback(self._background_tasks.remove)
 
+    def _schedule_teacher_review(
+        self,
+        *,
+        turn_messages: list[dict[str, Any]],
+        channel: str,
+        chat_id: str,
+        agent_label: str = "main agent",
+    ) -> None:
+        """Review a completed run without blocking the user response."""
+        if not self.teacher.is_enabled() or not turn_messages:
+            return
+        self._schedule_background(self.teacher.review_turn(
+            turn_messages=turn_messages,
+            channel=channel,
+            chat_id=chat_id,
+            agent_label=agent_label,
+        ))
+
     def stop(self) -> None:
         """Stop the agent loop."""
         self._running = False
@@ -415,9 +440,16 @@ class AgentLoop:
                 messages, channel=channel, chat_id=chat_id,
                 message_id=msg.metadata.get("message_id"),
             )
+            start_idx = len(session.messages)
             self._save_turn(session, all_msgs, 1 + len(history))
+            turn_messages = list(session.messages[start_idx:])
             self.sessions.save(session)
             self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
+            self._schedule_teacher_review(
+                turn_messages=turn_messages,
+                channel=channel,
+                chat_id=chat_id,
+            )
             return OutboundMessage(channel=channel, chat_id=chat_id,
                                   content=final_content or "Background task completed.")
 
@@ -468,9 +500,16 @@ class AgentLoop:
         if final_content is None:
             final_content = "I've completed processing but have no response to give."
 
+        start_idx = len(session.messages)
         self._save_turn(session, all_msgs, 1 + len(history))
+        turn_messages = list(session.messages[start_idx:])
         self.sessions.save(session)
         self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
+        self._schedule_teacher_review(
+            turn_messages=turn_messages,
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+        )
 
         if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
             return None
