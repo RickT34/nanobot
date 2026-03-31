@@ -110,10 +110,9 @@ IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST
     def _build_runtime_context(
         channel: str | None, chat_id: str | None, timezone: str | None = None,
     ) -> str:
-        """Build untrusted runtime metadata block for injection before the user message."""
+        """Build a minimal untrusted runtime metadata block for injection before the user message."""
+        del channel, chat_id
         lines = [f"Current Time: {current_time_str(timezone)}"]
-        if channel and chat_id:
-            lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
         return ContextBuilder._RUNTIME_CONTEXT_TAG + "\n" + "\n".join(lines)
 
     def _load_bootstrap_files(self) -> str:
